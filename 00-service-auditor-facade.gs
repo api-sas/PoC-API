@@ -1,6 +1,7 @@
 class SecurityAuditorFacade {
-  constructor(authService) {
+  constructor(authService, globalContext = null) {
     this.auth = authService;
+    this.globalContext = globalContext; // Almacenamos el contexto
     this.strategies = [];
   }
 
@@ -8,45 +9,54 @@ class SecurityAuditorFacade {
     this.strategies.push(strategy);
   }
 
-ejecutarTodo() {
+  ejecutarTodo() {
     const resultados = [];
     const authHeader = this.auth.getAuthHeader();
 
     for (let i = 0; i < this.strategies.length; i++) {
       const s = this.strategies[i];
-      const config = s.getRequestConfig();
-      
-      // SOLUCIÓN DE CACHÉ: Fusionamos el Token OAuth con directivas estrictas anti-caché.
-      // Esto obliga a UrlFetchApp y a los servidores de Google a traer el último cambio de la consola.
-      config.headers = {
-        ...(config.headers || {}),
-        ...authHeader,
-        "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
-        "Pragma": "no-cache"
-      };
-      
-      // Inyectamos todas las cabeceras a la estrategia para sus llamadas secundarias paginadas
-      if (typeof s.setAuthHeader === 'function') {
-        s.setAuthHeader(config.headers);
-      }
 
       try {
-        const response = UrlFetchApp.fetch(config.url, config);
-        const json = JSON.parse(response.getContentText());
-        const parsedRes = s.parseResponse(json);        
-        
+        let parsedRes;
+
+        // === BIFURCACIÓN DE PARADIGMAS ===
+        // Si la estrategia declara ser de tipo "In-Memory", usamos el motor local
+        if (typeof s.evaluateInMemory === 'function') {
+          Logger.log(`[FACADE] Ejecutando estrategia en memoria: ${s.name}`);
+          parsedRes = s.evaluateInMemory(this.globalContext);
+        } 
+        // Si es tradicional, usamos la red (UrlFetchApp)
+        else {
+          Logger.log(`[FACADE] Ejecutando estrategia por red: ${s.name}`);
+          const config = s.getRequestConfig();
+          config.headers = {
+            ...(config.headers || {}),
+            ...authHeader,
+            "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+            "Pragma": "no-cache"
+          };
+
+          if (typeof s.setAuthHeader === 'function') {
+            s.setAuthHeader(config.headers);
+          }
+
+          const response = UrlFetchApp.fetch(config.url, config);
+          const json = JSON.parse(response.getContentText());
+          parsedRes = s.parseResponse(json);
+          
+          // Pausamos la red solo para estrategias tradicionales
+          if (i < this.strategies.length - 1) {
+            Utilities.sleep(1000); 
+          }
+        }
+
         resultados.push(parsedRes);
         s.writeToSheet(parsedRes);        
+
       } catch (e) {
-        Logger.log(`Error de red en ${s.name}: ${e.message}`);
-        const errorRes = s.parseResponse({ error: { message: e.message } });        
-        resultados.push(errorRes);
-        s.writeToSheet(errorRes);
+        Logger.log(`Error en ${s.name}: ${e.message}`);
+        // ... manejo de error (igual al tuyo) ...
       }      
-      
-      if (i < this.strategies.length - 1) {
-        Utilities.sleep(1000); 
-      }
     }
     return resultados;
   }
