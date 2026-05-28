@@ -7,18 +7,31 @@ function AuditoriaIdentidadIdentificacion() {
   
   try {
     const auth = new AuthService();
-    const auditor = new SecurityAuditorFacade(auth);
     // OAuth config
     const userEmail = auth.getCurrentUserEmail();
     const authHeader = auth.getAuthHeader();
     const zeroTrustPolicyId = auth.getZeroTrustPolicyId();
     const customerId = auth.getCustomerId();
+    //censo de usuarios para policy query
+    const censoGlobal = new CensusStateWrapper();
+    censoGlobal.buildAndStoreCensus(auth, customerId);
+    const censo = censoWrapper.getCensus();
+    const policyQuery = new GlobalPolicyExtractor(auth, customerId);
+    const politicas = policyQuery.fetchTree();
+    const globalContext = {
+      census: censo,
+      policies: politicas
+    };
+    const auditor = new SecurityAuditorFacade(auth, globalContext);
 
     // 1. Instanciamos las estrategias en un arreglo local para retener su referencia
     const estrategias = [
-      
       new SsoAuditStrategy(customerId),
       new StrongPasswordPolicyStrategy(customerId),//5
+
+      /**
+      
+
       new TwoStepVerificationCounter(), //10
       new EmployeeIdStrategy(), //22
       new UsuarioConfiguracionAvanzadaStrategy(), //25
@@ -26,17 +39,15 @@ function AuditoriaIdentidadIdentificacion() {
       new ContextAwareAccessStrategy(zeroTrustPolicyId), //27
       new ExternalProvisioningStrategy(), //30
       new ManualUserAuditStrategy() //31
-      /**
+
+      
       new AuditTokens(userEmail), //7, 8
-      
       new PasswordManagerStrategy(), //17
-      
       new DeprovisioningAuditStrategy(), //32
       new SlaOffboardingAuditStrategy(), //22
       new SecurityAlertsAuditStrategy(), //34
       new GroupExposureAuditStrategy(authHeader),//35
       new AdvancedProtectionPolicyStrategy(customerId), //24
-      
       new PasswordReusePolicyStrategy(customerId), //6
       new TwoStepVerificationEnrollmentPolicyStrategy(customerId), //9
       new TwoStepVerificationEnforcementPolicyStrategy(customerId), //11

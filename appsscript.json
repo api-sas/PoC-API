@@ -16,6 +16,11 @@
         "userSymbol": "Drive",
         "version": "v3",
         "serviceId": "drive"
+      },
+      {
+        "userSymbol": "AdminLicenseManager",
+        "version": "v1",
+        "serviceId": "licensing"
       }
     ]
   },
