@@ -5,14 +5,14 @@
  */
 class DefaultPolicyValuesRegistry {
   /**
-   * Retorna el objeto base de configuración para un tipo de política específico.
+   * Retorna las politicas que son mencionadas a continuación
    * @param {string} settingType - El tipo de configuración
    * @return {Object|null} El valor por defecto o nulo si no está registrado.
    */
   static getDefaults(settingType) {
     const registry = {
       "security.password": {
-        allowedStrength: "WEAK", // Si Google no lo envía, la fuerza base es débil
+        allowedStrength: "WEAK", // Si Google no lo envía, valor por defecto
         enforceRequirementsAtLogin: false,
         allowReuse: true,
         enforceStrongPassword: false
@@ -20,33 +20,28 @@ class DefaultPolicyValuesRegistry {
       "security.lessSecureApps": {
         allowLessSecureApps: false // Por defecto, el acceso LSA suele estar bloqueado
       },
-      // Puedes ir agregando más tipos de políticas a medida que crees nuevas estrategias
-      "chat.chat_history": {
-        history_on_by_default: false
-      }
     };
-
     return registry[settingType] || null;
   }
 }
 
 /**
- * Extractor maestro de políticas. Descarga todo el árbol de políticas 
- * de Cloud Identity y lo mantiene en la memoria RAM del script.
+ * Extrae las políticas de los usuarios de la OU raíz [fetchTree]
+ * y lo mantiene en la memoria RAM del script.
  */
 class GlobalPolicyExtractor {
   constructor(authService, customerId) {
     this.auth = authService;
     this.customerId = customerId;
-    this.rawPolicies = []; // Aquí vivirá el árbol en memoria
+    this.rawPolicies = []; // json gigante con todas las configuraciones solicitadas
   }
 
   /**
-   * Ejecuta la descarga completa de políticas respetando estrictamente el límite de 1 QPS.
+   * Ejecuta Policy Query para traer todas las politicas.
    * @returns {Array} Matriz con todas las políticas de la organización.
    */
   fetchTree() {
-    Logger.log("[POLICY EXTRACTOR] Iniciando extracción global de políticas...");
+    Logger.log("[POLICY QUERY] Iniciando extracción global de políticas...");
     let pageToken = "";
     const baseUrl = `https://cloudidentity.googleapis.com/v1/policies?customer=customers/${this.customerId}`;
     
@@ -56,9 +51,14 @@ class GlobalPolicyExtractor {
         url += `&pageToken=${pageToken}`;
       }
       
+      const authHeader = this.auth.getAuthHeader();
       const config = {
         method: "get",
-        headers: this.auth.getAuthHeader(),
+        headers: {
+          ...authHeader,
+          "Cache-Control": "no-cache, no-store, max-age=0, must-revalidate",
+          "Pragma": "no-cache"
+        },
         muteHttpExceptions: true
       };
 
@@ -71,7 +71,7 @@ class GlobalPolicyExtractor {
       }
 
       if (json.policies && json.policies.length > 0) {
-        // Enriquecemos (hidratamos) las políticas sobre la marcha con sus valores por defecto
+        // si las politicas vienen vacías, se aplican los valores por defecto de las políticas
         const hydratedPolicies = json.policies.map(policy => this._hydratePolicy(policy));
         this.rawPolicies = this.rawPolicies.concat(hydratedPolicies);
       }
@@ -79,25 +79,25 @@ class GlobalPolicyExtractor {
       pageToken = json.nextPageToken;
       
       if (pageToken) {
-        Logger.log("[POLICY EXTRACTOR] Paginación detectada. Aplicando retardo obligatorio de 1000ms para evitar Error 429 (Límite QPS)...");
+        Logger.log("[POLICY QUERY] Paginación detectada. Aplicando latencia de 1000ms para evitar Error 429 (Límite QPS)...");
         Utilities.sleep(1000); 
       }
 
     } while (pageToken);
 
-    Logger.log(`[POLICY EXTRACTOR] Extracción completada. ${this.rawPolicies.length} políticas cacheadas en memoria.`);
+    Logger.log(`[POLICY QUERY] Extracción completada. ${this.rawPolicies.length} políticas cacheadas en memoria.`);
     return this.rawPolicies;
   }
 
   /**
-   * Retorna el árbol de políticas ya descargado.
+   * Retorna las políticas de google Policy.
    */
   getPolicies() {
     return this.rawPolicies;
   }
 
   /**
-   * Función privada que fusiona el JSON recibido de Google con los valores base del registro.
+   * Función privada que fusiona el JSON recibido de Google con los valores por defecto del registro.
    */
   _hydratePolicy(policy) {
     if (!policy || !policy.setting || !policy.setting.type) return policy;

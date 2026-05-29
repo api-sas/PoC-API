@@ -18,7 +18,7 @@ class CensusStateWrapper {
    * @param {string} customerId - ID del cliente (ej. 'my_customer').
    */
   buildAndStoreCensus(authService, customerId) {
-    Logger.log("Iniciando la construcción del Censo Global...");
+    Logger.log("Iniciando la construcción del censo global...");
     
     // 1. Extraer todos los usuarios (Recomendación: usar AdminDirectory avanzado para velocidad)
     const users = this._fetchAllUsers(customerId);
@@ -113,7 +113,7 @@ class CensusStateWrapper {
   // --- Mock/Wrappers de llamadas a la API (Admin SDK) ---
 
   _fetchAllUsers(customerId) {
-    // Aquí idealmente usas el servicio avanzado: AdminDirectory.Users.list({customer: customerId, maxResults: 500})
+    // AdminDirectory.Users.list({customer: customerId, maxResults: 500})
     // Para simplificar, devolvemos una estructura esperada:
     return AdminDirectory.Users.list({
       customer: customerId,
