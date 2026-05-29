@@ -4,7 +4,6 @@
  */
 class StrongPasswordPolicyStrategy extends ApiStrategy {
   constructor(customerId) {
-    // 1. Configuramos los IDs para que ApiStrategy sepa dónde escribir
     const configIDs = [
       { 
         id: "ID-003", 
@@ -15,28 +14,41 @@ class StrongPasswordPolicyStrategy extends ApiStrategy {
       }
     ];
     
-    // 2. Llamamos al constructor del padre (ApiStrategy)
     super("Strong Password Policy Audit", configIDs);
     
     this.customerId = customerId || "my_customer";
-    this.category = "Authentication"; 
+    this.category = "Identidad y autenticación";
   }
 
-  /**
-   * Al no tener getRequestConfig(), la Facade ejecutará este método en su lugar.
-   * @param {Object} globalContext Contiene { census: Array, policies: Array }
-   */
   evaluateInMemory(globalContext) {
     const { census, policies } = globalContext;
 
     if (!census || !policies) {
       return this._buildErrorResponse("Falta el contexto global (censo o políticas).");
     }
-
+    
     const passwordPolicies = policies.filter(p => p.setting && p.setting.type === "security.password");
+    
+    // La política raíz es la que no tiene filtros de "entity." (Aplica a todo el customer)
+    const rootPolicy = passwordPolicies.find(p => !p.query || !p.query.includes("entity."));
+    
+    let rootStrength = "Desconocido";
+    let isRootEnforced = false;
+    // https://docs.cloud.google.com/identity/docs/concepts/supported-policy-api-settings?hl=es-419&authuser=3#security_settings
+    if (rootPolicy && rootPolicy.setting && rootPolicy.setting.password) {
+      rootStrength = rootPolicy.setting.password.allowedStrength || "Desconocido";
+      isRootEnforced = rootPolicy.setting.password.enforceRequirementsAtLogin === true;
+    }
+
+    // Definimos el valor a imprimir basado estrictamente en lo que dice la raíz
+    let estadoPrincipal = rootStrength === "STRONG" ? "Fuerte" : "Débil";
+    if (!isRootEnforced) estadoPrincipal += "- Inhabilitado";
+    Logger.log(`[ID-003] Respuesta de la API (Raíz): Fuerza criptográfica='${rootStrength}', Forzado en Login=${isRootEnforced}`);
+
+    // 2. Lógica de porcentajes 
     let usuariosCumplen = 0;
     let usuariosNoCumplen = 0;
-
+    
     for (const user of census) {
       const aplicables = passwordPolicies.filter(p => CELParserEngine.evaluate(p.query, user));
       const politicaGanadora = PolicyReducerFactory.reduce(aplicables, "security.password");
@@ -60,11 +72,12 @@ class StrongPasswordPolicyStrategy extends ApiStrategy {
     } else if (porcentajeCumplimiento >= 50) {
       riesgo = "Medio";
     }
+    Logger.log(`[ID-003] Se prepararon los datos en memoria para imprimir en la celda y actualizar el semáforo.`);
 
-    // Retornamos el objeto exacto que ApiStrategy.writeToSheet() espera recibir
     return {
       name: this.name,
-      valorPrincipal: `${porcentajeCumplimiento}% Cumple`,
+      // Cambiado: Ahora imprime la configuración base (ej. "Fuerte") en lugar del porcentaje
+      valorPrincipal: estadoPrincipal, 
       comentario003: comentario,
       riesgo003: riesgo,
       score003: this.calcularScoreDeRiesgo(riesgo)

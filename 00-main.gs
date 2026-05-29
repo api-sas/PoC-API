@@ -13,8 +13,8 @@ function AuditoriaIdentidadIdentificacion() {
     const zeroTrustPolicyId = auth.getZeroTrustPolicyId();
     const customerId = auth.getCustomerId();
     //censo de usuarios para policy query
-    const censoGlobal = new CensusStateWrapper();
-    censoGlobal.buildAndStoreCensus(auth, customerId);
+    const censoWrapper = new CensusStateWrapper();
+    censoWrapper.buildAndStoreCensus(auth, customerId);
     const censo = censoWrapper.getCensus();
     const policyQuery = new GlobalPolicyExtractor(auth, customerId);
     const politicas = policyQuery.fetchTree();
